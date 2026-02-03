@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Config:
+    dataset_name: str = 'ethfraud30k'
     num_classes: int = 2
     lr: float = 5e-3
     epochs: int = 250
@@ -27,13 +28,12 @@ class Config:
     gatv2_heads: int = 4
     gatv2_dropout: float = 0.2
     cheb_k: list[int] = field(default_factory=lambda: [2, 3])
-    
+
     scheduler_patience: int = 10
     scheduler_factor: float = 0.7
 
     p_evasion_threshold: float = 0.5
-    gas_penalty_coef: float = 0.1
-    value_penalty_coef: float = 0.01
+    cost_penalty_weight: float = 0.01
     max_budget_prop: float = 0.4
     max_sybils: int = 5
     num_optim_steps: int = 100

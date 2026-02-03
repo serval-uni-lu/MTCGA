@@ -21,7 +21,7 @@
 *.jpg
 *.jpeg
 *.json
-*.parquet
+# *.parquet
 *.ipynb_checkpoints
 
 # exceptions

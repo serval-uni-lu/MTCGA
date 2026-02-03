@@ -20,29 +20,29 @@ class AttackConfig:
     """Configuration for multi-target constrained graph attack."""
 
     # transaction constraints
-    value_min: float = 1.0
+    value_min: float = 1e14  # 0.0001 ETH
     value_max: float = 1e21
     gas: int = 21000
     gas_price_min: float = 1e9
     gas_price_max: float = 1e12
 
     # budget constraints
-    max_budget_prop: float = 0.4  # max proportion of available funds
+    max_budget_prop: float = 0.4  # max proportion of available funds (alpha)
 
     # structural constraints
     max_transformations: int = -1  # -1 means auto
     max_sybils: int = 5
 
     # optimization parameters
-    num_optim_steps: int = 100
-    maxiter: int = 100
+    num_optim_steps: int = 10
+    maxiter: int = 10
     vol_tol: float = 1e-10
     len_tol: float = 1e-6
 
     # attack parameters
     p_evasion_threshold: float = 0.5
 
-    # penalty coefficients
+    # penalty coefficients (μ_g, μ_w in paper)
     gas_penalty_coef: float = 0.1
     value_penalty_coef: float = 0.01
 
@@ -395,17 +395,15 @@ class MultiTargetConstrainedGraphAttack:
         ]
 
         def objective(x):
-            """Objective with efficiency-based penalties."""
+            """Objective: impact + efficiency-based penalty."""
             log_value, log_gas_price = x
             value = 10 ** log_value
             gas_price = 10 ** log_gas_price
 
-            # check feasibility
             total_cost = value + self.config.gas * gas_price
             if total_cost > max_usable:
                 return 1.0
 
-            # create and evaluate transaction
             tx = Transaction(
                 from_id=sender_id,
                 to_id=receiver_id,
@@ -416,10 +414,16 @@ class MultiTargetConstrainedGraphAttack:
 
             impact = self._compute_tx_impact(tx, gradients, probs)
 
-            # compute efficiency penalty
-            penalty = self._compute_penalties(value, gas_price, impact)
+            # Efficiency-based penalty: cost per unit impact
+            # penalty = [μ_g (g/g_min - 1) + μ_w (v/v_min - 1)] / (|J| + ε)
+            gas_ratio = gas_price / self.config.gas_price_min - 1.0
+            value_ratio = value / self.config.value_min - 1.0
+            efficiency_penalty = (
+                self.config.gas_penalty_coef * gas_ratio +
+                self.config.value_penalty_coef * value_ratio
+            ) / (abs(impact) + 1e-6)
 
-            return impact + penalty
+            return impact + efficiency_penalty
 
         try:
             # run optimization
@@ -452,18 +456,6 @@ class MultiTargetConstrainedGraphAttack:
             pass
 
         return None, float('inf')
-
-    def _compute_penalties(self, value: float, gas_price: float, impact: float) -> float:
-        """Compute efficiency-based penalties: cost per unit impact."""
-        # relative costs (0 at minimum, increasing with actual cost)
-        gas_ratio = gas_price / self.config.gas_price_min - 1.0
-        value_ratio = value / self.config.value_min - 1.0
-
-        # combined cost per unit impact
-        efficiency_penalty = (self.config.gas_penalty_coef * gas_ratio +
-                            self.config.value_penalty_coef * value_ratio) / (abs(impact) + 1e-6)
-
-        return efficiency_penalty
 
     def _apply_tx(self, tx: Transaction):
         """

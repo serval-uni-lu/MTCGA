@@ -4,6 +4,7 @@ import pandas as pd
 
 from loguru import logger
 from torch_geometric.data import Data
+from torch_geometric.utils import degree
 from sklearn.preprocessing import StandardScaler
 from typing import Optional, Union, Tuple, List, Dict
 
@@ -12,33 +13,15 @@ from .graph import Graph
 
 def load_txs(dataset_name: str) -> pd.DataFrame:
     """Load transactions from a specified dataset."""
-    if dataset_name.lower() == 'etfd':
-        return load_etfd()
-    elif dataset_name.lower() == 'mtcga':
-        return load_mtcga()
+    if dataset_name.lower() == 'ethfraud':
+        return load_ethfraud()
     else:
         raise ValueError("Unknown dataset name.")
 
-def load_etfd() -> pd.DataFrame:
-    """Load the etfd dataset."""
-    txs = pd.read_csv('data/etfd/dataset.csv')
-    txs_df = txs[['from_address', 'to_address', 'value', 'gas', 'gas_price', 'input', 'receipt_gas_used', 'from_scam', 'to_scam', 'from_category', 'to_category']].copy()
-    txs_df = txs_df.dropna(subset=['to_address'])
 
-    for col in ['value', 'gas', 'gas_price', 'receipt_gas_used']:
-        txs_df[col] = pd.to_numeric(txs_df[col], errors='coerce')
-    
-    unique_addresses = pd.concat([txs_df['from_address'], txs_df['to_address']]).unique()
-    address_to_id = {addr: idx for idx, addr in enumerate(unique_addresses)}
-    txs_df['from_id'] = txs_df['from_address'].map(address_to_id)
-    txs_df['to_id'] = txs_df['to_address'].map(address_to_id)
-    txs_df['scam'] = txs_df['from_scam'] | txs_df['to_scam']
-        
-    return txs_df
-
-def load_mtcga() -> pd.DataFrame:
-    """Load the mtcga dataset."""
-    txs = pd.read_parquet('data/mtcga/dataset.parquet', engine='fastparquet')
+def load_ethfraud() -> pd.DataFrame:
+    """Load the ethfraud dataset."""
+    txs = pd.read_parquet('data/ethfraud30k/dataset.parquet', engine='fastparquet')
     txs_df = txs[['from_address', 'to_address', 'value', 'gas', 'gas_price', 'input', 'receipt_gas_used', 'from_scam', 'to_scam', 'from_category', 'to_category']].copy()
     unique_addresses = pd.concat([txs_df['from_address'], txs_df['to_address']]).unique()
     address_to_id = {addr: idx for idx, addr in enumerate(unique_addresses)}
@@ -302,7 +285,7 @@ class DataPreprocessor:
         """Initialize data preprocessor from transaction DataFrame."""
         self.original_txs = txs.copy()
         self.txs = txs
-        self.node_features, self.edges, self.edge_features = to_account_features(self.txs, True, True, True)
+        self.node_features, self.edges, self.edge_features = to_account_features(self.txs, False, True, True)
 
         self.node_labels = self.node_features['scam'].astype(int)
         self.feature_names = [col for col in self.node_features.columns
@@ -324,6 +307,14 @@ class DataPreprocessor:
         self.graph = Graph(pyg, requires_grad=True)
 
         logger.info(f"Dataset preprocessing completed: {len(self.node_labels)} nodes, {len(self.edges)} edges")
+
+    @property
+    def pna_deg(self) -> torch.Tensor:
+        """Lazily compute and cache degree histogram for PNA model."""
+        if not hasattr(self, '_pna_deg'):
+            d = degree(self.graph.edge_index[1], num_nodes=self.graph.x.shape[0], dtype=torch.long)
+            self._pna_deg = torch.bincount(d, minlength=1)
+        return self._pna_deg
 
     def normalize_node_features(self, features: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
         """Normalize node features using the fitted scaler."""

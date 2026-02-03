@@ -8,7 +8,7 @@ from torch_geometric.data import Data
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, confusion_matrix
 
 from .config import Config
-from .models import load_model
+from .models import load_model, compute_pna_deg
 
 
 def predict_for_ids(model, graph, ids: list[int]) -> np.ndarray:
@@ -19,7 +19,7 @@ def predict_for_ids(model, graph, ids: list[int]) -> np.ndarray:
     with torch.no_grad():
         x, edge_index = graph.x, graph.edge_index
         
-        if hasattr(model, 'convs') and hasattr(model.convs[0], 'edge_dim') and graph.edge_attr is not None:
+        if hasattr(model, 'convs') and getattr(model.convs[0], 'edge_dim', None) is not None and graph.edge_attr is not None:
             logits = model(x, edge_index, graph.edge_attr)
         else:
             logits = model(x, edge_index)
@@ -32,13 +32,17 @@ def evaluate_model(model_name: str, data: Data, config: Config, split: str = 'te
     split_path = Path(f"models/{model_name}/{split}.npy")
     if not split_path.exists():
         raise FileNotFoundError(f"Split file not found: {split_path}")
-    
+
     indices = np.load(split_path)
     mask = torch.zeros(data.x.shape[0], dtype=torch.bool)
     mask[indices] = True
-    
+
     edge_dim = data.edge_attr.shape[1] if data.edge_attr is not None else 0
-    model = load_model(model_name, data.x.shape[1], edge_dim, config)
+
+    # Compute pna_deg if needed
+    pna_deg = compute_pna_deg(data.edge_index, data.x.shape[0]) if model_name == 'PNA' else None
+
+    model = load_model(model_name, data.x.shape[1], edge_dim, config, pna_deg=pna_deg)
     
     device = config.get_device()
     model = model.to(device)
@@ -47,7 +51,7 @@ def evaluate_model(model_name: str, data: Data, config: Config, split: str = 'te
     
     model.eval()
     with torch.no_grad():
-        if hasattr(model, 'convs') and hasattr(model.convs[0], 'edge_dim') and data.edge_attr is not None:
+        if hasattr(model, 'convs') and getattr(model.convs[0], 'edge_dim', None) is not None and data.edge_attr is not None:
             out = model(data.x, data.edge_index, data.edge_attr)
         else:
             out = model(data.x, data.edge_index)

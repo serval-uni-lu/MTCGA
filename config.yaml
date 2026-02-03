@@ -4,7 +4,7 @@ lr: 0.005
 epochs: 250
 dropout: 0.1
 weight_decay: 0.0001
-early_stopping_patience: 30
+early_stopping_patience: 50
 device: 'auto'
 seed: 42
 
@@ -32,12 +32,12 @@ test_size: 0.2
 
 # attack
 p_evasion_threshold: 0.5
-max_sybils: 5
+max_sybils: 3
 max_transformations: 10
 max_budget_prop: 0.4
-gas_penalty_coef: 0.1
-value_penalty_coef: 0.01
-num_optim_steps: 100
-maxiter: 100
+cost_penalty_weight: 0.001
+num_optim_steps: 5
+maxiter: 5
 vol_tol: 1e-10
 len_tol: 1e-6
+
